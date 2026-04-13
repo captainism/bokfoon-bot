@@ -17,27 +17,29 @@ OPENWEATHER_API_KEY = os.getenv("OW_KEY")
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# เก็บข้อมูล user
 users = {}
-# format:
-# user_id: {
-#   lat, lon,
-#   last_alert,
-#   last_aqi
-# }
 
 # ==========================
-# ดึงข้อมูลฝุ่น
+# ดึงข้อมูลฝุ่น (กันพัง)
 # ==========================
 def get_air_quality(lat, lon):
-    url = f"http://api.openweathermap.org/data/2.5/air_pollution?lat={lat}&lon={lon}&appid={OPENWEATHER_API_KEY}"
-    res = requests.get(url).json()
+    try:
+        url = f"http://api.openweathermap.org/data/2.5/air_pollution?lat={lat}&lon={lon}&appid={OPENWEATHER_API_KEY}"
+        res = requests.get(url, timeout=10)
 
-    data = res["list"][0]
-    pm25 = data["components"]["pm2_5"]
-    aqi = data["main"]["aqi"]
+        if res.status_code != 200:
+            print("API ERROR:", res.text)
+            return None, None
 
-    return pm25, aqi
+        data = res.json()["list"][0]
+        pm25 = data["components"]["pm2_5"]
+        aqi = data["main"]["aqi"]
+
+        return pm25, aqi
+
+    except Exception as e:
+        print("get_air_quality ERROR:", e)
+        return None, None
 
 
 # ==========================
@@ -57,7 +59,7 @@ def interpret_aqi(aqi):
 
 
 # ==========================
-# รับ Location → ตอบทันที
+# รับ Location
 # ==========================
 @handler.add(MessageEvent, message=LocationMessage)
 def handle_location(event):
@@ -66,17 +68,20 @@ def handle_location(event):
     lon = event.message.longitude
 
     pm25, aqi = get_air_quality(lat, lon)
-    level, advice = interpret_aqi(aqi)
 
-    # บันทึก user + ค่า AQI ล่าสุด
-    users[user_id] = {
-        "lat": lat,
-        "lon": lon,
-        "last_alert": 0,
-        "last_aqi": aqi
-    }
+    if pm25 is None:
+        reply = "❌ ดึงข้อมูลอากาศไม่สำเร็จ ลองใหม่อีกครั้ง"
+    else:
+        level, advice = interpret_aqi(aqi)
 
-    reply = f"""📍 ตำแหน่งของคุณ
+        users[user_id] = {
+            "lat": lat,
+            "lon": lon,
+            "last_alert": 0,
+            "last_aqi": aqi
+        }
+
+        reply = f"""📍 ตำแหน่งของคุณ
 
 PM2.5: {pm25:.2f} µg/m³
 ระดับ: {level}
@@ -92,11 +97,11 @@ PM2.5: {pm25:.2f} µg/m³
 
 
 # ==========================
-# Home route (แก้ 503)
+# Home route
 # ==========================
 @app.route("/")
 def home():
-    return "Bot is running"
+    return "OK", 200
 
 
 # ==========================
@@ -104,42 +109,45 @@ def home():
 # ==========================
 @app.route("/callback", methods=['POST'])
 def callback():
-    signature = request.headers['X-Line-Signature']
+    signature = request.headers.get('X-Line-Signature')
     body = request.get_data(as_text=True)
 
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
+        print("Invalid signature")
         abort(400)
+    except Exception as e:
+        print("Webhook ERROR:", e)
+        abort(500)
 
     return 'OK'
 
 
 # ==========================
-# ระบบแจ้งเตือนอัตโนมัติ
+# Loop แจ้งเตือน
 # ==========================
 def air_check_loop():
     while True:
-        if len(users) == 0:
-            time.sleep(600)
-            continue
+        try:
+            if len(users) == 0:
+                time.sleep(600)
+                continue
 
-        for user_id, data in users.items():
-            lat = data["lat"]
-            lon = data["lon"]
+            for user_id, data in list(users.items()):
+                pm25, aqi = get_air_quality(data["lat"], data["lon"])
 
-            pm25, aqi = get_air_quality(lat, lon)
-            level, advice = interpret_aqi(aqi)
+                if pm25 is None:
+                    continue
 
-            old_aqi = data.get("last_aqi", 1)
+                level, advice = interpret_aqi(aqi)
+                old_aqi = data.get("last_aqi", 1)
 
-            # 🔥 แจ้งเฉพาะ "จากดี → แย่"
-            if aqi >= 3 and old_aqi < 3:
-                now = time.time()
+                if aqi >= 3 and old_aqi < 3:
+                    now = time.time()
 
-                # กัน spam (1 ชม./ครั้ง)
-                if now - data["last_alert"] > 3600:
-                    message = f"""⚠️ อากาศเริ่มแย่!
+                    if now - data["last_alert"] > 3600:
+                        message = f"""⚠️ อากาศเริ่มแย่!
 
 PM2.5: {pm25:.2f} µg/m³
 ระดับ: {level}
@@ -147,28 +155,31 @@ PM2.5: {pm25:.2f} µg/m³
 คำแนะนำ:
 {advice}
 """
-                    line_bot_api.push_message(
-                        user_id,
-                        TextSendMessage(text=message)
-                    )
+                        line_bot_api.push_message(
+                            user_id,
+                            TextSendMessage(text=message)
+                        )
 
-                    users[user_id]["last_alert"] = now
+                        users[user_id]["last_alert"] = now
 
-            # อัปเดตค่า AQI ล่าสุด
-            users[user_id]["last_aqi"] = aqi
+                users[user_id]["last_aqi"] = aqi
 
-        time.sleep(3600)  # 🔥 เช็คทุก 1 ชั่วโมง
+        except Exception as e:
+            print("Loop ERROR:", e)
+
+        time.sleep(3600)
 
 
 # ==========================
-# Start background thread
+# Start thread
 # ==========================
 threading.Thread(target=air_check_loop, daemon=True).start()
 
 
 # ==========================
-# Run
+# Run (สำคัญมาก)
 # ==========================
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 10000))
+    print("Starting on port:", port)
     app.run(host="0.0.0.0", port=port)
