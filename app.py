@@ -92,6 +92,14 @@ PM2.5: {pm25:.2f} µg/m³
 
 
 # ==========================
+# Home route (แก้ 503)
+# ==========================
+@app.route("/")
+def home():
+    return "Bot is running"
+
+
+# ==========================
 # Webhook
 # ==========================
 @app.route("/callback", methods=['POST'])
