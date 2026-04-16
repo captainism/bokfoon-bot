@@ -165,27 +165,152 @@ def build_aqi_flex(loc, pm25, aqi_real, trend, level, advice):
                 "type": "linearGradient",
                 "angle": "180deg",
                 "startColor": color,
-                "endColor": "#FFFFFF"
+                "endColor": "#ffffff"
             },
             "contents": [
-                {"type": "text", "text": loc["name"], "weight": "bold", "size": "xxl"},
+                {
+                    "type": "text",
+                    "text": loc["name"],
+                    "weight": "bold",
+                    "size": "xxl"
+                },
                 {
                     "type": "box",
                     "layout": "vertical",
                     "margin": "lg",
-                    "spacing": "sm",
+                    "spacing": "xl",
                     "contents": [
-                        {"type": "text", "text": f"AQI: {aqi_real}"},
-                        {"type": "text", "text": f"PM2.5: {pm25:.2f}"},
-                        {"type": "text", "text": f"ระดับ: {level}"},
-                        {"type": "text", "text": f"สถานะ: {trend}"},
-                        {"type": "text", "text": f"คำแนะนำ: {advice}", "wrap": True}
+
+                        # AQI
+                        {
+                            "type": "box",
+                            "layout": "baseline",
+                            "spacing": "sm",
+                            "contents": [
+                                {
+                                    "type": "text",
+                                    "text": "AQI",
+                                    "color": "#444444",
+                                    "size": "sm",
+                                    "flex": 2,
+                                    "weight": "bold"
+                                },
+                                {
+                                    "type": "text",
+                                    "text": str(aqi_real),
+                                    "wrap": True,
+                                    "color": "#444444",
+                                    "size": "sm",
+                                    "flex": 5
+                                }
+                            ]
+                        },
+
+                        # ระดับ
+                        {
+                            "type": "box",
+                            "layout": "baseline",
+                            "spacing": "sm",
+                            "contents": [
+                                {
+                                    "type": "text",
+                                    "text": "ระดับ",
+                                    "color": "#444444",
+                                    "size": "sm",
+                                    "flex": 2,
+                                    "weight": "bold"
+                                },
+                                {
+                                    "type": "text",
+                                    "text": level,
+                                    "wrap": True,
+                                    "color": "#444444",
+                                    "size": "sm",
+                                    "flex": 5
+                                }
+                            ]
+                        },
+
+                        # สถานะ
+                        {
+                            "type": "box",
+                            "layout": "baseline",
+                            "spacing": "sm",
+                            "contents": [
+                                {
+                                    "type": "text",
+                                    "text": "สถานะ",
+                                    "color": "#444444",
+                                    "size": "sm",
+                                    "flex": 2,
+                                    "weight": "bold"
+                                },
+                                {
+                                    "type": "text",
+                                    "text": trend,
+                                    "wrap": True,
+                                    "color": "#444444",
+                                    "size": "sm",
+                                    "flex": 5
+                                }
+                            ]
+                        },
+
+                        # คำแนะนำ
+                        {
+                            "type": "box",
+                            "layout": "baseline",
+                            "spacing": "sm",
+                            "contents": [
+                                {
+                                    "type": "text",
+                                    "text": "คำแนะนำ",
+                                    "color": "#444444",
+                                    "size": "sm",
+                                    "flex": 2,
+                                    "weight": "bold"
+                                },
+                                {
+                                    "type": "text",
+                                    "text": advice,
+                                    "wrap": True,
+                                    "color": "#444444",
+                                    "size": "sm",
+                                    "flex": 5
+                                }
+                            ]
+                        },
+
+                        # PM2.5 (เพิ่มเข้าไปให้ครบ)
+                        {
+                            "type": "box",
+                            "layout": "baseline",
+                            "spacing": "sm",
+                            "contents": [
+                                {
+                                    "type": "text",
+                                    "text": "PM2.5",
+                                    "color": "#444444",
+                                    "size": "sm",
+                                    "flex": 2,
+                                    "weight": "bold"
+                                },
+                                {
+                                    "type": "text",
+                                    "text": f"{pm25:.2f}",
+                                    "wrap": True,
+                                    "color": "#444444",
+                                    "size": "sm",
+                                    "flex": 5
+                                }
+                            ]
+                        }
+
                     ]
                 }
             ]
         }
     }
-
 # ==========================
 # TEXT
 # ==========================
