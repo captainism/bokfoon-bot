@@ -42,11 +42,29 @@ def get_air_quality(lat, lon):
         return None, None
 
 
+# ==========================
+# PM2.5 → AQI (US Standard)
+# ==========================
+def pm25_to_aqi(pm25):
+    if pm25 <= 12:
+        return int((50/12) * pm25)
+    elif pm25 <= 35.4:
+        return int((100-51)/(35.4-12)*(pm25-12)+51)
+    elif pm25 <= 55.4:
+        return int((150-101)/(55.4-35.4)*(pm25-35.4)+101)
+    elif pm25 <= 150.4:
+        return int((200-151)/(150.4-55.4)*(pm25-55.4)+151)
+    elif pm25 <= 250.4:
+        return int((300-201)/(250.4-150.4)*(pm25-150.4)+201)
+    else:
+        return int((500-301)/(500-250.4)*(pm25-250.4)+301)
+
+
 def interpret_aqi(aqi):
-    if aqi == 1: return "ดี 😊", "อากาศดีมาก"
-    elif aqi == 2: return "พอใช้ 😐", "ยังโอเค"
-    elif aqi == 3: return "เริ่มมีผล 😷", "ควรใส่หน้ากาก"
-    elif aqi == 4: return "แย่ ⚠️", "หลีกเลี่ยงกิจกรรมกลางแจ้ง"
+    if aqi <= 50: return "ดี 😊", "อากาศดีมาก"
+    elif aqi <= 100: return "ปานกลาง 😐", "ยังโอเค"
+    elif aqi <= 150: return "เริ่มมีผล 😷", "ควรใส่หน้ากาก"
+    elif aqi <= 200: return "แย่ ⚠️", "หลีกเลี่ยงกิจกรรมกลางแจ้ง"
     else: return "อันตราย ☠️", "ควรอยู่ในอาคาร"
 
 
@@ -111,7 +129,6 @@ def build_flex(user_id):
 
             bubbles.append(bubble)
 
-    # ➕ เพิ่มสถานที่
     bubbles.append({
         "type": "bubble",
         "body": {
@@ -190,11 +207,13 @@ def handle_location(event):
     lon = event.message.longitude
     name = pending_name[user_id]
 
-    pm25, aqi = get_air_quality(lat, lon)
+    pm25, _ = get_air_quality(lat, lon)
 
     if pm25 is None:
         reply = "❌ ดึงข้อมูลไม่สำเร็จ"
     else:
+        aqi_real = pm25_to_aqi(pm25)
+
         if user_id not in users:
             users[user_id] = []
 
@@ -203,7 +222,7 @@ def handle_location(event):
             "lat": lat,
             "lon": lon,
             "last_alert": 0,
-            "last_aqi": aqi
+            "last_aqi": aqi_real
         })
 
         reply = f"✅ เพิ่ม {name} แล้ว"
@@ -230,24 +249,26 @@ def handle_postback(event):
         idx = int(data.split("id=")[1])
         loc = users[user_id][idx]
 
-        pm25, aqi = get_air_quality(loc["lat"], loc["lon"])
+        pm25, _ = get_air_quality(loc["lat"], loc["lon"])
 
         if pm25 is None:
             reply = "❌ ดึงข้อมูลไม่สำเร็จ"
         else:
-            level, advice = interpret_aqi(aqi)
-            trend = get_trend(loc["last_aqi"], aqi)
+            aqi_real = pm25_to_aqi(pm25)
+            level, advice = interpret_aqi(aqi_real)
+            trend = get_trend(loc["last_aqi"], aqi_real)
 
             reply = f"""📍 {loc['name']}
 
 PM2.5: {pm25:.2f}
+AQI: {aqi_real}
 ระดับ: {level}
 {trend}
 
 {advice}
 """
 
-            loc["last_aqi"] = aqi
+            loc["last_aqi"] = aqi_real
 
     elif "action=delete" in data:
         idx = int(data.split("id=")[1])
@@ -255,6 +276,47 @@ PM2.5: {pm25:.2f}
         reply = f"🗑️ ลบ {removed['name']} แล้ว"
 
     line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
+
+
+# ==========================
+# LOOP ALERT
+# ==========================
+def air_check_loop():
+    while True:
+        for user_id, locs in users.items():
+            for loc in locs:
+                pm25, _ = get_air_quality(loc["lat"], loc["lon"])
+
+                if pm25 is None:
+                    continue
+
+                aqi_real = pm25_to_aqi(pm25)
+                old = loc["last_aqi"]
+
+                if aqi_real >= 150 and old < 150:
+                    if time.time() - loc["last_alert"] > 3600:
+                        level, advice = interpret_aqi(aqi_real)
+                        trend = get_trend(old, aqi_real)
+
+                        msg = f"""⚠️ {loc['name']}
+
+PM2.5: {pm25:.2f}
+AQI: {aqi_real}
+ระดับ: {level}
+{trend}
+
+{advice}
+"""
+
+                        line_bot_api.push_message(user_id, TextSendMessage(text=msg))
+                        loc["last_alert"] = time.time()
+
+                loc["last_aqi"] = aqi_real
+
+        time.sleep(3600)
+
+
+threading.Thread(target=air_check_loop, daemon=True).start()
 
 
 # ==========================
@@ -276,45 +338,6 @@ def callback():
         abort(400)
 
     return 'OK'
-
-
-# ==========================
-# LOOP ALERT
-# ==========================
-def air_check_loop():
-    while True:
-        for user_id, locs in users.items():
-            for loc in locs:
-                pm25, aqi = get_air_quality(loc["lat"], loc["lon"])
-
-                if pm25 is None:
-                    continue
-
-                old = loc["last_aqi"]
-
-                if aqi >= 3 and old < 3:
-                    if time.time() - loc["last_alert"] > 3600:
-                        level, advice = interpret_aqi(aqi)
-                        trend = get_trend(old, aqi)
-
-                        msg = f"""⚠️ {loc['name']}
-
-PM2.5: {pm25:.2f}
-ระดับ: {level}
-{trend}
-
-{advice}
-"""
-
-                        line_bot_api.push_message(user_id, TextSendMessage(text=msg))
-                        loc["last_alert"] = time.time()
-
-                loc["last_aqi"] = aqi
-
-        time.sleep(3600)
-
-
-threading.Thread(target=air_check_loop, daemon=True).start()
 
 
 # ==========================
