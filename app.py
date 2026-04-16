@@ -1,8 +1,6 @@
 from flask import Flask, request, abort
 import requests
 import os
-import threading
-import time
 
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
@@ -29,16 +27,21 @@ pending_name = {}
 # ==========================
 def get_air_quality(lat, lon):
     try:
+        if lat is None or lon is None:
+            return None, None
+
         url = f"https://api.openweathermap.org/data/2.5/air_pollution?lat={lat}&lon={lon}&appid={OPENWEATHER_API_KEY}"
         res = requests.get(url, timeout=10)
 
         if res.status_code != 200:
+            print("API ERROR:", res.text)
             return None, None
 
         data = res.json()["list"][0]
         return data["components"]["pm2_5"], data["main"]["aqi"]
 
-    except:
+    except Exception as e:
+        print("ERROR:", e)
         return None, None
 
 # ==========================
@@ -71,7 +74,7 @@ def get_trend(old, new):
     return "➡️ คงที่"
 
 # ==========================
-# 🎨 COLOR AQI
+# COLOR
 # ==========================
 def get_gradient(aqi):
     if aqi <= 50:
@@ -86,25 +89,20 @@ def get_gradient(aqi):
         return "#AA00FF"
 
 # ==========================
-# FLEX (รายการสถานที่)
+# FLEX LIST
 # ==========================
 def build_list_flex(user_id):
     bubbles = []
 
     if user_id in users:
         for i, loc in enumerate(users[user_id]):
-            bubble = {
+            bubbles.append({
                 "type": "bubble",
                 "body": {
                     "type": "box",
                     "layout": "vertical",
                     "contents": [
-                        {
-                            "type": "text",
-                            "text": loc["name"],
-                            "weight": "bold",
-                            "size": "xl"
-                        }
+                        {"type": "text", "text": loc["name"], "weight": "bold", "size": "xl"}
                     ]
                 },
                 "footer": {
@@ -114,26 +112,25 @@ def build_list_flex(user_id):
                         {
                             "type": "button",
                             "style": "primary",
+                            "color": "#F75454",
                             "action": {
                                 "type": "postback",
                                 "label": "🗑️ ลบ",
                                 "data": f"action=delete&id={i}"
-                            },
-                            "color": "#F75454"
+                            }
                         }
                     ]
                 }
-            }
-            bubbles.append(bubble)
+            })
 
-    # เพิ่มสถานที่
     bubbles.append({
         "type": "bubble",
         "body": {
-            "type": "text",
-            "text": "➕ เพิ่มสถานที่",
-            "weight": "bold",
-            "size": "xl"
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {"type": "text", "text": "➕ เพิ่มสถานที่", "weight": "bold", "size": "xl"}
+            ]
         },
         "footer": {
             "type": "box",
@@ -142,18 +139,14 @@ def build_list_flex(user_id):
                 {
                     "type": "button",
                     "style": "primary",
-                    "action": {
-                        "type": "postback",
-                        "label": "เพิ่ม",
-                        "data": "action=add"
-                    }
+                    "action": {"type": "postback", "label": "เพิ่ม", "data": "action=add"}
                 }
             ]
         }
     })
 
     return FlexSendMessage(
-        alt_text="รายการสถานที่",
+        alt_text="รายการ",
         contents={"type": "carousel", "contents": bubbles}
     )
 
@@ -175,12 +168,7 @@ def build_aqi_flex(loc, pm25, aqi_real, trend, level, advice):
                 "endColor": "#FFFFFF"
             },
             "contents": [
-                {
-                    "type": "text",
-                    "text": loc["name"],
-                    "weight": "bold",
-                    "size": "xxl"
-                },
+                {"type": "text", "text": loc["name"], "weight": "bold", "size": "xxl"},
                 {
                     "type": "box",
                     "layout": "vertical",
@@ -226,25 +214,22 @@ def handle_text(event):
             trend = get_trend(loc["last_aqi"], aqi_real)
 
             bubbles.append(build_aqi_flex(loc, pm25, aqi_real, trend, level, advice))
-
             loc["last_aqi"] = aqi_real
+
+        if len(bubbles) == 0:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ ดึงข้อมูลไม่ได้"))
+            return
 
         line_bot_api.reply_message(
             event.reply_token,
-            FlexSendMessage(
-                alt_text="AQI",
-                contents={"type": "carousel", "contents": bubbles}
-            )
+            FlexSendMessage(alt_text="AQI", contents={"type": "carousel", "contents": bubbles})
         )
 
     elif pending_action.get(user_id) == "waiting_name":
         pending_name[user_id] = text
         pending_action[user_id] = "waiting_location"
 
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text=f"📍 ส่ง location สำหรับ '{text}'")
-        )
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"📍 ส่ง location สำหรับ '{text}'"))
 
 # ==========================
 # LOCATION
@@ -271,7 +256,6 @@ def handle_location(event):
             "name": name,
             "lat": lat,
             "lon": lon,
-            "last_alert": 0,
             "last_aqi": aqi_real
         })
 
@@ -300,6 +284,25 @@ def handle_postback(event):
         reply = f"🗑️ ลบ {removed['name']} แล้ว"
 
     line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
+
+# ==========================
+# WEB ROUTES
+# ==========================
+@app.route("/", methods=["GET", "HEAD"])
+def home():
+    return "OK", 200
+
+@app.route("/callback", methods=['POST'])
+def callback():
+    signature = request.headers.get('X-Line-Signature')
+    body = request.get_data(as_text=True)
+
+    try:
+        handler.handle(body, signature)
+    except InvalidSignatureError:
+        abort(400)
+
+    return 'OK'
 
 # ==========================
 # RUN
