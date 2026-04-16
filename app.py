@@ -29,7 +29,7 @@ pending_name = {}
 # ==========================
 def get_air_quality(lat, lon):
     try:
-        url = f"http://api.openweathermap.org/data/2.5/air_pollution?lat={lat}&lon={lon}&appid={OPENWEATHER_API_KEY}"
+        url = f"https://api.openweathermap.org/data/2.5/air_pollution?lat={lat}&lon={lon}&appid={OPENWEATHER_API_KEY}"
         res = requests.get(url, timeout=10)
 
         if res.status_code != 200:
