@@ -41,9 +41,8 @@ def get_air_quality(lat, lon):
     except:
         return None, None
 
-
 # ==========================
-# PM2.5 → AQI (US Standard)
+# AQI
 # ==========================
 def pm25_to_aqi(pm25):
     if pm25 <= 12:
@@ -59,7 +58,6 @@ def pm25_to_aqi(pm25):
     else:
         return int((500-301)/(500-250.4)*(pm25-250.4)+301)
 
-
 def interpret_aqi(aqi):
     if aqi <= 50: return "ดี 😊", "อากาศดีมาก"
     elif aqi <= 100: return "ปานกลาง 😐", "ยังโอเค"
@@ -67,17 +65,30 @@ def interpret_aqi(aqi):
     elif aqi <= 200: return "แย่ ⚠️", "หลีกเลี่ยงกิจกรรมกลางแจ้ง"
     else: return "อันตราย ☠️", "ควรอยู่ในอาคาร"
 
-
 def get_trend(old, new):
     if new > old: return "📈 แย่ลง"
     elif new < old: return "📉 ดีขึ้น"
     return "➡️ คงที่"
 
+# ==========================
+# 🎨 COLOR AQI
+# ==========================
+def get_gradient(aqi):
+    if aqi <= 50:
+        return "#00E676"
+    elif aqi <= 100:
+        return "#FFD600"
+    elif aqi <= 150:
+        return "#FF9100"
+    elif aqi <= 200:
+        return "#FF3D00"
+    else:
+        return "#AA00FF"
 
 # ==========================
-# FLEX UI
+# FLEX (รายการสถานที่)
 # ==========================
-def build_flex(user_id):
+def build_list_flex(user_id):
     bubbles = []
 
     if user_id in users:
@@ -99,23 +110,10 @@ def build_flex(user_id):
                 "footer": {
                     "type": "box",
                     "layout": "vertical",
-                    "spacing": "sm",
                     "contents": [
                         {
                             "type": "button",
                             "style": "primary",
-                            "height": "sm",
-                            "action": {
-                                "type": "postback",
-                                "label": "🔍 บอกฝุ่น",
-                                "data": f"action=check&id={i}"
-                            },
-                            "color": "#75CDFF"
-                        },
-                        {
-                            "type": "button",
-                            "style": "primary",
-                            "height": "sm",
                             "action": {
                                 "type": "postback",
                                 "label": "🗑️ ลบ",
@@ -126,22 +124,16 @@ def build_flex(user_id):
                     ]
                 }
             }
-
             bubbles.append(bubble)
 
+    # เพิ่มสถานที่
     bubbles.append({
         "type": "bubble",
         "body": {
-            "type": "box",
-            "layout": "vertical",
-            "contents": [
-                {
-                    "type": "text",
-                    "text": "➕ เพิ่มสถานที่",
-                    "weight": "bold",
-                    "size": "xl"
-                }
-            ]
+            "type": "text",
+            "text": "➕ เพิ่มสถานที่",
+            "weight": "bold",
+            "size": "xl"
         },
         "footer": {
             "type": "box",
@@ -150,13 +142,11 @@ def build_flex(user_id):
                 {
                     "type": "button",
                     "style": "primary",
-                    "height": "sm",
                     "action": {
                         "type": "postback",
                         "label": "เพิ่ม",
                         "data": "action=add"
-                    },
-                    "color": "#78F78D"
+                    }
                 }
             ]
         }
@@ -164,12 +154,49 @@ def build_flex(user_id):
 
     return FlexSendMessage(
         alt_text="รายการสถานที่",
-        contents={
-            "type": "carousel",
-            "contents": bubbles
-        }
+        contents={"type": "carousel", "contents": bubbles}
     )
 
+# ==========================
+# FLEX AQI
+# ==========================
+def build_aqi_flex(loc, pm25, aqi_real, trend, level, advice):
+    color = get_gradient(aqi_real)
+
+    return {
+        "type": "bubble",
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "background": {
+                "type": "linearGradient",
+                "angle": "180deg",
+                "startColor": color,
+                "endColor": "#FFFFFF"
+            },
+            "contents": [
+                {
+                    "type": "text",
+                    "text": loc["name"],
+                    "weight": "bold",
+                    "size": "xxl"
+                },
+                {
+                    "type": "box",
+                    "layout": "vertical",
+                    "margin": "lg",
+                    "spacing": "sm",
+                    "contents": [
+                        {"type": "text", "text": f"AQI: {aqi_real}"},
+                        {"type": "text", "text": f"PM2.5: {pm25:.2f}"},
+                        {"type": "text", "text": f"ระดับ: {level}"},
+                        {"type": "text", "text": f"สถานะ: {trend}"},
+                        {"type": "text", "text": f"คำแนะนำ: {advice}", "wrap": True}
+                    ]
+                }
+            ]
+        }
+    }
 
 # ==========================
 # TEXT
@@ -180,8 +207,35 @@ def handle_text(event):
     text = event.message.text.strip()
 
     if text == "รายการ":
-        flex_msg = build_flex(user_id)
-        line_bot_api.reply_message(event.reply_token, flex_msg)
+        line_bot_api.reply_message(event.reply_token, build_list_flex(user_id))
+
+    elif text == "บอกฝุ่น":
+        if user_id not in users or len(users[user_id]) == 0:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ ไม่มีสถานที่"))
+            return
+
+        bubbles = []
+
+        for loc in users[user_id]:
+            pm25, _ = get_air_quality(loc["lat"], loc["lon"])
+            if pm25 is None:
+                continue
+
+            aqi_real = pm25_to_aqi(pm25)
+            level, advice = interpret_aqi(aqi_real)
+            trend = get_trend(loc["last_aqi"], aqi_real)
+
+            bubbles.append(build_aqi_flex(loc, pm25, aqi_real, trend, level, advice))
+
+            loc["last_aqi"] = aqi_real
+
+        line_bot_api.reply_message(
+            event.reply_token,
+            FlexSendMessage(
+                alt_text="AQI",
+                contents={"type": "carousel", "contents": bubbles}
+            )
+        )
 
     elif pending_action.get(user_id) == "waiting_name":
         pending_name[user_id] = text
@@ -191,7 +245,6 @@ def handle_text(event):
             event.reply_token,
             TextSendMessage(text=f"📍 ส่ง location สำหรับ '{text}'")
         )
-
 
 # ==========================
 # LOCATION
@@ -214,10 +267,7 @@ def handle_location(event):
     else:
         aqi_real = pm25_to_aqi(pm25)
 
-        if user_id not in users:
-            users[user_id] = []
-
-        users[user_id].append({
+        users.setdefault(user_id, []).append({
             "name": name,
             "lat": lat,
             "lon": lon,
@@ -232,7 +282,6 @@ def handle_location(event):
 
     line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
 
-
 # ==========================
 # POSTBACK
 # ==========================
@@ -245,100 +294,12 @@ def handle_postback(event):
         pending_action[user_id] = "waiting_name"
         reply = "📌 ตั้งชื่อสถานที่นี้ว่าอะไรดี?"
 
-    elif "action=check" in data:
-        idx = int(data.split("id=")[1])
-        loc = users[user_id][idx]
-
-        pm25, _ = get_air_quality(loc["lat"], loc["lon"])
-
-        if pm25 is None:
-            reply = "❌ ดึงข้อมูลไม่สำเร็จ"
-        else:
-            aqi_real = pm25_to_aqi(pm25)
-            level, advice = interpret_aqi(aqi_real)
-            trend = get_trend(loc["last_aqi"], aqi_real)
-
-            reply = f"""📍 {loc['name']}
-
-PM2.5: {pm25:.2f}
-AQI: {aqi_real}
-ระดับ: {level}
-{trend}
-
-{advice}
-"""
-
-            loc["last_aqi"] = aqi_real
-
     elif "action=delete" in data:
         idx = int(data.split("id=")[1])
         removed = users[user_id].pop(idx)
         reply = f"🗑️ ลบ {removed['name']} แล้ว"
 
     line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
-
-
-# ==========================
-# LOOP ALERT
-# ==========================
-def air_check_loop():
-    while True:
-        for user_id, locs in users.items():
-            for loc in locs:
-                pm25, _ = get_air_quality(loc["lat"], loc["lon"])
-
-                if pm25 is None:
-                    continue
-
-                aqi_real = pm25_to_aqi(pm25)
-                old = loc["last_aqi"]
-
-                if aqi_real >= 150 and old < 150:
-                    if time.time() - loc["last_alert"] > 3600:
-                        level, advice = interpret_aqi(aqi_real)
-                        trend = get_trend(old, aqi_real)
-
-                        msg = f"""⚠️ {loc['name']}
-
-PM2.5: {pm25:.2f}
-AQI: {aqi_real}
-ระดับ: {level}
-{trend}
-
-{advice}
-"""
-
-                        line_bot_api.push_message(user_id, TextSendMessage(text=msg))
-                        loc["last_alert"] = time.time()
-
-                loc["last_aqi"] = aqi_real
-
-        time.sleep(3600)
-
-
-threading.Thread(target=air_check_loop, daemon=True).start()
-
-
-# ==========================
-# WEBHOOK
-# ==========================
-@app.route("/")
-def home():
-    return "OK", 200
-
-
-@app.route("/callback", methods=['POST'])
-def callback():
-    signature = request.headers.get('X-Line-Signature')
-    body = request.get_data(as_text=True)
-
-    try:
-        handler.handle(body, signature)
-    except InvalidSignatureError:
-        abort(400)
-
-    return 'OK'
-
 
 # ==========================
 # RUN
