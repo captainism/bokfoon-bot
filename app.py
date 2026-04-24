@@ -63,53 +63,110 @@ def pm25_to_aqi(pm25):
         return int((500-301)/(500-250.4)*(pm25-250.4)+301)
 
 def interpret_aqi(aqi):
-    if aqi <= 50:
-        return "ดี 😊", "อากาศดีมาก"
-    elif aqi <= 100:
-        return "ปานกลาง 😐", "ยังโอเค"
-    elif aqi <= 150:
-        return "เริ่มมีผล 😷", "ควรใส่หน้ากาก"
-    elif aqi <= 200:
-        return "แย่ ⚠️", "หลีกเลี่ยงกิจกรรมกลางแจ้ง"
-    else:
-        return "อันตราย ☠️", "ควรอยู่ในอาคาร"
+    if aqi <= 50: return "ดี 😊", "อากาศดีมาก"
+    elif aqi <= 100: return "ปานกลาง 😐", "ยังโอเค"
+    elif aqi <= 150: return "เริ่มมีผล 😷", "ควรใส่หน้ากาก"
+    elif aqi <= 200: return "แย่ ⚠️", "หลีกเลี่ยงกิจกรรมกลางแจ้ง"
+    else: return "อันตราย ☠️", "ควรอยู่ในอาคาร"
 
 def get_trend(old, new):
-    if new > old:
-        return "📈 แย่ลง"
-    elif new < old:
-        return "📉 ดีขึ้น"
+    if new > old: return "📈 แย่ลง"
+    elif new < old: return "📉 ดีขึ้น"
     return "➡️ คงที่"
 
 def get_gradient(aqi):
-    if aqi <= 50:
-        return "#00E676"
-    elif aqi <= 100:
-        return "#FFD600"
-    elif aqi <= 150:
-        return "#FF9100"
-    elif aqi <= 200:
-        return "#FF3D00"
-    else:
-        return "#AA00FF"
+    if aqi <= 50: return "#00E676"
+    elif aqi <= 100: return "#FFD600"
+    elif aqi <= 150: return "#FF9100"
+    elif aqi <= 200: return "#FF3D00"
+    else: return "#AA00FF"
 
 # ==========================
-# 🔥 TIER SYSTEM (ใหม่)
+# TIER
 # ==========================
 def get_tier(aqi):
-    if aqi <= 50:
-        return 1
-    elif aqi <= 100:
-        return 2
-    elif aqi <= 150:
-        return 3
-    elif aqi <= 200:
-        return 4
-    else:
-        return 5
+    if aqi <= 50: return 1
+    elif aqi <= 100: return 2
+    elif aqi <= 150: return 3
+    elif aqi <= 200: return 4
+    else: return 5
 
 # ==========================
-# 🔥 CHECK AIR QUALITY (TIER ALERT)
+# 🔥 FLEX STYLE (ใหม่)
+# ==========================
+def build_flex_content(aqi_real, level, trend, advice, pm25):
+    return {
+        "type": "box",
+        "layout": "vertical",
+        "margin": "lg",
+        "spacing": "xl",
+        "contents": [
+
+            {
+                "type": "box",
+                "layout": "baseline",
+                "contents": [
+                    {"type": "text", "text": "AQI", "flex": 2, "weight": "bold", "size": "sm"},
+                    {"type": "text", "text": str(aqi_real), "flex": 5, "size": "sm"}
+                ]
+            },
+
+            {
+                "type": "box",
+                "layout": "baseline",
+                "contents": [
+                    {"type": "text", "text": "ระดับ", "flex": 2, "weight": "bold", "size": "sm"},
+                    {"type": "text", "text": level, "flex": 5, "size": "sm"}
+                ]
+            },
+
+            {
+                "type": "box",
+                "layout": "baseline",
+                "contents": [
+                    {"type": "text", "text": "สถานะ", "flex": 2, "weight": "bold", "size": "sm"},
+                    {"type": "text", "text": trend, "flex": 5, "size": "sm"}
+                ]
+            },
+
+            {
+                "type": "box",
+                "layout": "baseline",
+                "contents": [
+                    {"type": "text", "text": "คำแนะนำ", "flex": 2, "weight": "bold", "size": "sm"},
+                    {"type": "text", "text": advice, "flex": 5, "size": "sm", "wrap": True}
+                ]
+            },
+
+            {
+                "type": "box",
+                "layout": "baseline",
+                "contents": [
+                    {"type": "text", "text": "PM2.5", "flex": 2, "weight": "bold", "size": "sm"},
+                    {"type": "text", "text": f"{pm25:.2f}", "flex": 5, "size": "sm"}
+                ]
+            }
+        ]
+    }
+
+# ==========================
+# FLEX AQI (แก้)
+# ==========================
+def build_aqi_flex(loc, pm25, aqi_real, trend, level, advice):
+    return {
+        "type": "bubble",
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {"type": "text", "text": loc["name"], "weight": "bold", "size": "xl"},
+                build_flex_content(aqi_real, level, trend, advice, pm25)
+            ]
+        }
+    }
+
+# ==========================
+# WARN (แก้ให้ใช้ style เดียวกัน)
 # ==========================
 def check_air_quality_job():
     for user_id, locs in users.items():
@@ -122,13 +179,7 @@ def check_air_quality_job():
             new_aqi = pm25_to_aqi(pm25)
             old_aqi = loc["last_aqi"]
 
-            new_tier = get_tier(new_aqi)
-            old_tier = get_tier(old_aqi)
-
-            # ==========================
-            # 🚨 เตือนเมื่อ tier แย่ลง
-            # ==========================
-            if new_tier > old_tier:
+            if get_tier(new_aqi) > get_tier(old_aqi):
 
                 level, advice = interpret_aqi(new_aqi)
 
@@ -138,168 +189,15 @@ def check_air_quality_job():
                         "type": "box",
                         "layout": "vertical",
                         "contents": [
-                            {
-                                "type": "text",
-                                "text": "⚠️ อากาศแย่ลง (Tier Change)",
-                                "weight": "bold",
-                                "size": "xl",
-                                "color": "#FF3D00"
-                            },
-                            {
-                                "type": "text",
-                                "text": loc["name"],
-                                "weight": "bold",
-                                "size": "lg"
-                            },
-                            {
-                                "type": "text",
-                                "text": f"Tier {old_tier} → {new_tier}",
-                                "wrap": True
-                            },
-                            {
-                                "type": "text",
-                                "text": f"AQI {old_aqi} → {new_aqi}",
-                                "wrap": True
-                            },
-                            {
-                                "type": "text",
-                                "text": level,
-                                "wrap": True
-                            },
-                            {
-                                "type": "text",
-                                "text": advice,
-                                "wrap": True
-                            }
+                            {"type": "text", "text": f"⚠️ {loc['name']}", "weight": "bold", "size": "xl"},
+                            build_flex_content(new_aqi, level, "📈 แย่ลง", advice, pm25)
                         ]
                     }
                 }
 
-                try:
-                    line_bot_api.push_message(
-                        user_id,
-                        FlexSendMessage(
-                            alt_text="Air Quality Alert",
-                            contents=bubble
-                        )
-                    )
-                except Exception as e:
-                    print("push error:", e)
+                line_bot_api.push_message(user_id, FlexSendMessage(alt_text="Alert", contents=bubble))
 
-            # update ค่า
             loc["last_aqi"] = new_aqi
-
-# ==========================
-# FLEX LIST
-# ==========================
-def build_list_flex(user_id):
-    bubbles = []
-
-    if user_id in users:
-        for i, loc in enumerate(users[user_id]):
-            bubbles.append({
-                "type": "bubble",
-                "body": {
-                    "type": "box",
-                    "layout": "vertical",
-                    "contents": [
-                        {"type": "text", "text": loc["name"], "weight": "bold", "size": "xl"}
-                    ]
-                },
-                "footer": {
-                    "type": "box",
-                    "layout": "vertical",
-                    "contents": [
-                        {
-                            "type": "button",
-                            "style": "primary",
-                            "color": "#F75454",
-                            "action": {
-                                "type": "postback",
-                                "label": "🗑️ ลบ",
-                                "data": f"action=delete&id={i}"
-                            }
-                        }
-                    ]
-                }
-            })
-
-    bubbles.append({
-        "type": "bubble",
-        "body": {
-            "type": "box",
-            "layout": "vertical",
-            "contents": [
-                {"type": "text", "text": "➕ เพิ่มสถานที่", "weight": "bold", "size": "xl"}
-            ]
-        },
-        "footer": {
-            "type": "box",
-            "layout": "vertical",
-            "contents": [
-                {
-                    "type": "button",
-                    "style": "primary",
-                    "action": {"type": "postback", "label": "เพิ่ม", "data": "action=add"}
-                }
-            ]
-        }
-    })
-
-    return FlexSendMessage(
-        alt_text="รายการ",
-        contents={"type": "carousel", "contents": bubbles}
-    )
-
-# ==========================
-# FLEX AQI
-# ==========================
-def build_aqi_flex(loc, pm25, aqi_real, trend, level, advice):
-    color = get_gradient(aqi_real)
-
-    return {
-        "type": "bubble",
-        "body": {
-            "type": "box",
-            "layout": "vertical",
-            "background": {
-                "type": "linearGradient",
-                "angle": "180deg",
-                "startColor": color,
-                "endColor": "#ffffff"
-            },
-            "contents": [
-                {
-                    "type": "text",
-                    "text": loc["name"],
-                    "weight": "bold",
-                    "size": "xxl"
-                },
-                {
-                    "type": "text",
-                    "text": f"AQI: {aqi_real}",
-                    "margin": "md"
-                },
-                {
-                    "type": "text",
-                    "text": level
-                },
-                {
-                    "type": "text",
-                    "text": trend
-                },
-                {
-                    "type": "text",
-                    "text": advice,
-                    "wrap": True
-                },
-                {
-                    "type": "text",
-                    "text": f"PM2.5: {pm25:.2f}"
-                }
-            ]
-        }
-    }
 
 # ==========================
 # TEXT HANDLER
