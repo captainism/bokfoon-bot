@@ -2,6 +2,7 @@ from flask import Flask, request, abort
 import requests
 import os
 
+from apscheduler.schedulers.background import BackgroundScheduler
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import *
@@ -62,20 +63,24 @@ def pm25_to_aqi(pm25):
         return int((500-301)/(500-250.4)*(pm25-250.4)+301)
 
 def interpret_aqi(aqi):
-    if aqi <= 50: return "ดี 😊", "อากาศดีมาก"
-    elif aqi <= 100: return "ปานกลาง 😐", "ยังโอเค"
-    elif aqi <= 150: return "เริ่มมีผล 😷", "ควรใส่หน้ากาก"
-    elif aqi <= 200: return "แย่ ⚠️", "หลีกเลี่ยงกิจกรรมกลางแจ้ง"
-    else: return "อันตราย ☠️", "ควรอยู่ในอาคาร"
+    if aqi <= 50:
+        return "ดี 😊", "อากาศดีมาก"
+    elif aqi <= 100:
+        return "ปานกลาง 😐", "ยังโอเค"
+    elif aqi <= 150:
+        return "เริ่มมีผล 😷", "ควรใส่หน้ากาก"
+    elif aqi <= 200:
+        return "แย่ ⚠️", "หลีกเลี่ยงกิจกรรมกลางแจ้ง"
+    else:
+        return "อันตราย ☠️", "ควรอยู่ในอาคาร"
 
 def get_trend(old, new):
-    if new > old: return "📈 แย่ลง"
-    elif new < old: return "📉 ดีขึ้น"
+    if new > old:
+        return "📈 แย่ลง"
+    elif new < old:
+        return "📉 ดีขึ้น"
     return "➡️ คงที่"
 
-# ==========================
-# COLOR
-# ==========================
 def get_gradient(aqi):
     if aqi <= 50:
         return "#00E676"
@@ -87,6 +92,102 @@ def get_gradient(aqi):
         return "#FF3D00"
     else:
         return "#AA00FF"
+
+# ==========================
+# 🔥 TIER SYSTEM (ใหม่)
+# ==========================
+def get_tier(aqi):
+    if aqi <= 50:
+        return 1
+    elif aqi <= 100:
+        return 2
+    elif aqi <= 150:
+        return 3
+    elif aqi <= 200:
+        return 4
+    else:
+        return 5
+
+# ==========================
+# 🔥 CHECK AIR QUALITY (TIER ALERT)
+# ==========================
+def check_air_quality_job():
+    for user_id, locs in users.items():
+        for loc in locs:
+
+            pm25, _ = get_air_quality(loc["lat"], loc["lon"])
+            if pm25 is None:
+                continue
+
+            new_aqi = pm25_to_aqi(pm25)
+            old_aqi = loc["last_aqi"]
+
+            new_tier = get_tier(new_aqi)
+            old_tier = get_tier(old_aqi)
+
+            # ==========================
+            # 🚨 เตือนเมื่อ tier แย่ลง
+            # ==========================
+            if new_tier > old_tier:
+
+                level, advice = interpret_aqi(new_aqi)
+
+                bubble = {
+                    "type": "bubble",
+                    "body": {
+                        "type": "box",
+                        "layout": "vertical",
+                        "contents": [
+                            {
+                                "type": "text",
+                                "text": "⚠️ อากาศแย่ลง (Tier Change)",
+                                "weight": "bold",
+                                "size": "xl",
+                                "color": "#FF3D00"
+                            },
+                            {
+                                "type": "text",
+                                "text": loc["name"],
+                                "weight": "bold",
+                                "size": "lg"
+                            },
+                            {
+                                "type": "text",
+                                "text": f"Tier {old_tier} → {new_tier}",
+                                "wrap": True
+                            },
+                            {
+                                "type": "text",
+                                "text": f"AQI {old_aqi} → {new_aqi}",
+                                "wrap": True
+                            },
+                            {
+                                "type": "text",
+                                "text": level,
+                                "wrap": True
+                            },
+                            {
+                                "type": "text",
+                                "text": advice,
+                                "wrap": True
+                            }
+                        ]
+                    }
+                }
+
+                try:
+                    line_bot_api.push_message(
+                        user_id,
+                        FlexSendMessage(
+                            alt_text="Air Quality Alert",
+                            contents=bubble
+                        )
+                    )
+                except Exception as e:
+                    print("push error:", e)
+
+            # update ค่า
+            loc["last_aqi"] = new_aqi
 
 # ==========================
 # FLEX LIST
@@ -175,144 +276,33 @@ def build_aqi_flex(loc, pm25, aqi_real, trend, level, advice):
                     "size": "xxl"
                 },
                 {
-                    "type": "box",
-                    "layout": "vertical",
-                    "margin": "lg",
-                    "spacing": "xl",
-                    "contents": [
-
-                        # AQI
-                        {
-                            "type": "box",
-                            "layout": "baseline",
-                            "spacing": "sm",
-                            "contents": [
-                                {
-                                    "type": "text",
-                                    "text": "AQI",
-                                    "color": "#444444",
-                                    "size": "sm",
-                                    "flex": 2,
-                                    "weight": "bold"
-                                },
-                                {
-                                    "type": "text",
-                                    "text": str(aqi_real),
-                                    "wrap": True,
-                                    "color": "#444444",
-                                    "size": "sm",
-                                    "flex": 5
-                                }
-                            ]
-                        },
-
-                        # ระดับ
-                        {
-                            "type": "box",
-                            "layout": "baseline",
-                            "spacing": "sm",
-                            "contents": [
-                                {
-                                    "type": "text",
-                                    "text": "ระดับ",
-                                    "color": "#444444",
-                                    "size": "sm",
-                                    "flex": 2,
-                                    "weight": "bold"
-                                },
-                                {
-                                    "type": "text",
-                                    "text": level,
-                                    "wrap": True,
-                                    "color": "#444444",
-                                    "size": "sm",
-                                    "flex": 5
-                                }
-                            ]
-                        },
-
-                        # สถานะ
-                        {
-                            "type": "box",
-                            "layout": "baseline",
-                            "spacing": "sm",
-                            "contents": [
-                                {
-                                    "type": "text",
-                                    "text": "สถานะ",
-                                    "color": "#444444",
-                                    "size": "sm",
-                                    "flex": 2,
-                                    "weight": "bold"
-                                },
-                                {
-                                    "type": "text",
-                                    "text": trend,
-                                    "wrap": True,
-                                    "color": "#444444",
-                                    "size": "sm",
-                                    "flex": 5
-                                }
-                            ]
-                        },
-
-                        # คำแนะนำ
-                        {
-                            "type": "box",
-                            "layout": "baseline",
-                            "spacing": "sm",
-                            "contents": [
-                                {
-                                    "type": "text",
-                                    "text": "คำแนะนำ",
-                                    "color": "#444444",
-                                    "size": "sm",
-                                    "flex": 2,
-                                    "weight": "bold"
-                                },
-                                {
-                                    "type": "text",
-                                    "text": advice,
-                                    "wrap": True,
-                                    "color": "#444444",
-                                    "size": "sm",
-                                    "flex": 5
-                                }
-                            ]
-                        },
-
-                        # PM2.5 (เพิ่มเข้าไปให้ครบ)
-                        {
-                            "type": "box",
-                            "layout": "baseline",
-                            "spacing": "sm",
-                            "contents": [
-                                {
-                                    "type": "text",
-                                    "text": "PM2.5",
-                                    "color": "#444444",
-                                    "size": "sm",
-                                    "flex": 2,
-                                    "weight": "bold"
-                                },
-                                {
-                                    "type": "text",
-                                    "text": f"{pm25:.2f}",
-                                    "wrap": True,
-                                    "color": "#444444",
-                                    "size": "sm",
-                                    "flex": 5
-                                }
-                            ]
-                        }
-
-                    ]
+                    "type": "text",
+                    "text": f"AQI: {aqi_real}",
+                    "margin": "md"
+                },
+                {
+                    "type": "text",
+                    "text": level
+                },
+                {
+                    "type": "text",
+                    "text": trend
+                },
+                {
+                    "type": "text",
+                    "text": advice,
+                    "wrap": True
+                },
+                {
+                    "type": "text",
+                    "text": f"PM2.5: {pm25:.2f}"
                 }
             ]
         }
     }
+
 # ==========================
-# TEXT
+# TEXT HANDLER
 # ==========================
 @handler.add(MessageEvent, message=TextMessage)
 def handle_text(event):
@@ -324,7 +314,7 @@ def handle_text(event):
 
     elif text == "บอกฝุ่น":
         if user_id not in users or len(users[user_id]) == 0:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ ไม่มีสถานที่"))
+            line_bot_api.reply_message(event.reply_token, TextSendMessage("❌ ไม่มีสถานที่"))
             return
 
         bubbles = []
@@ -341,10 +331,6 @@ def handle_text(event):
             bubbles.append(build_aqi_flex(loc, pm25, aqi_real, trend, level, advice))
             loc["last_aqi"] = aqi_real
 
-        if len(bubbles) == 0:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ ดึงข้อมูลไม่ได้"))
-            return
-
         line_bot_api.reply_message(
             event.reply_token,
             FlexSendMessage(alt_text="AQI", contents={"type": "carousel", "contents": bubbles})
@@ -353,11 +339,10 @@ def handle_text(event):
     elif pending_action.get(user_id) == "waiting_name":
         pending_name[user_id] = text
         pending_action[user_id] = "waiting_location"
-
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"📍 ส่ง location สำหรับ '{text}'"))
+        line_bot_api.reply_message(event.reply_token, TextSendMessage("📍 ส่ง location"))
 
 # ==========================
-# LOCATION
+# LOCATION HANDLER
 # ==========================
 @handler.add(MessageEvent, message=LocationMessage)
 def handle_location(event):
@@ -401,7 +386,7 @@ def handle_postback(event):
 
     if data == "action=add":
         pending_action[user_id] = "waiting_name"
-        reply = "📌 ตั้งชื่อสถานที่นี้ว่าอะไรดี?"
+        reply = "📌 ตั้งชื่อสถานที่"
 
     elif "action=delete" in data:
         idx = int(data.split("id=")[1])
@@ -411,15 +396,15 @@ def handle_postback(event):
     line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
 
 # ==========================
-# WEB ROUTES
+# ROUTES
 # ==========================
-@app.route("/", methods=["GET", "HEAD"])
+@app.route("/", methods=["GET"])
 def home():
-    return "OK", 200
+    return "OK"
 
-@app.route("/callback", methods=['POST'])
+@app.route("/callback", methods=["POST"])
 def callback():
-    signature = request.headers.get('X-Line-Signature')
+    signature = request.headers.get("X-Line-Signature")
     body = request.get_data(as_text=True)
 
     try:
@@ -427,7 +412,14 @@ def callback():
     except InvalidSignatureError:
         abort(400)
 
-    return 'OK'
+    return "OK"
+
+# ==========================
+# SCHEDULER START
+# ==========================
+scheduler = BackgroundScheduler()
+scheduler.add_job(check_air_quality_job, "interval", hours=1)
+scheduler.start()
 
 # ==========================
 # RUN
