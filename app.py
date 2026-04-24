@@ -4,6 +4,7 @@ import os
 
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
+from apscheduler.schedulers.background import BackgroundScheduler
 from linebot.models import *
 
 app = Flask(__name__)
@@ -87,6 +88,16 @@ def get_gradient(aqi):
         return "#FF3D00"
     else:
         return "#AA00FF"
+
+# ==========================
+# TIER SYSTEM
+# ==========================
+def get_tier(aqi):
+    if aqi <= 50: return 1
+    elif aqi <= 100: return 2
+    elif aqi <= 150: return 3
+    elif aqi <= 200: return 4
+    else: return 5
 
 # ==========================
 # FLEX LIST
@@ -311,6 +322,119 @@ def build_aqi_flex(loc, pm25, aqi_real, trend, level, advice):
             ]
         }
     }
+
+# ==========================
+# AUTO ALERT SYSTEM
+# ==========================
+def check_air_quality_job():
+    for user_id, locs in users.items():
+        for loc in locs:
+
+            pm25, _ = get_air_quality(loc["lat"], loc["lon"])
+            if pm25 is None:
+                continue
+
+            new_aqi = pm25_to_aqi(pm25)
+            old_aqi = loc["last_aqi"]
+
+            # เทียบ tier
+            if get_tier(new_aqi) > get_tier(old_aqi):
+
+                level, advice = interpret_aqi(new_aqi)
+
+                bubble = {
+                    "type": "bubble",
+                    "body": {
+                        "type": "box",
+                        "layout": "vertical",
+                        "contents": [
+                            {
+                                "type": "text",
+                                "text": "⚠️ อากาศแย่ลง",
+                                "weight": "bold",
+                                "size": "xl",
+                                "color": "#FF3D00"
+                            },
+                            {
+                                "type": "text",
+                                "text": loc["name"],
+                                "weight": "bold",
+                                "size": "lg"
+                            },
+
+                            # 👉 ใช้ style เดียวกับของคุณ
+                            {
+                                "type": "box",
+                                "layout": "vertical",
+                                "margin": "lg",
+                                "spacing": "xl",
+                                "contents": [
+
+                                    {
+                                        "type": "box",
+                                        "layout": "baseline",
+                                        "contents": [
+                                            {"type": "text","text": "AQI","flex": 2,"weight": "bold","size": "sm"},
+                                            {"type": "text","text": str(new_aqi),"flex": 5,"size": "sm"}
+                                        ]
+                                    },
+
+                                    {
+                                        "type": "box",
+                                        "layout": "baseline",
+                                        "contents": [
+                                            {"type": "text","text": "ระดับ","flex": 2,"weight": "bold","size": "sm"},
+                                            {"type": "text","text": level,"flex": 5,"size": "sm"}
+                                        ]
+                                    },
+
+                                    {
+                                        "type": "box",
+                                        "layout": "baseline",
+                                        "contents": [
+                                            {"type": "text","text": "สถานะ","flex": 2,"weight": "bold","size": "sm"},
+                                            {"type": "text","text": "📈 แย่ลง","flex": 5,"size": "sm"}
+                                        ]
+                                    },
+
+                                    {
+                                        "type": "box",
+                                        "layout": "baseline",
+                                        "contents": [
+                                            {"type": "text","text": "คำแนะนำ","flex": 2,"weight": "bold","size": "sm"},
+                                            {"type": "text","text": advice,"flex": 5,"size": "sm","wrap": True}
+                                        ]
+                                    },
+
+                                    {
+                                        "type": "box",
+                                        "layout": "baseline",
+                                        "contents": [
+                                            {"type": "text","text": "PM2.5","flex": 2,"weight": "bold","size": "sm"},
+                                            {"type": "text","text": f"{pm25:.2f}","flex": 5,"size": "sm"}
+                                        ]
+                                    }
+
+                                ]
+                            }
+                        ]
+                    }
+                }
+
+                try:
+                    line_bot_api.push_message(
+                        user_id,
+                        FlexSendMessage(
+                            alt_text="Air Alert",
+                            contents=bubble
+                        )
+                    )
+                except Exception as e:
+                    print("push error:", e)
+
+            # อัปเดตค่า
+            loc["last_aqi"] = new_aqi
+
 # ==========================
 # TEXT
 # ==========================
@@ -433,5 +557,11 @@ def callback():
 # RUN
 # ==========================
 if __name__ == "__main__":
+
+    # START SCHEDULER
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(check_air_quality_job, "interval", hours=1)
+    scheduler.start()
+
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
