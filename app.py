@@ -2,7 +2,6 @@ from flask import Flask, request, abort
 import requests
 import os
 
-from apscheduler.schedulers.background import BackgroundScheduler
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import *
@@ -74,133 +73,246 @@ def get_trend(old, new):
     elif new < old: return "📉 ดีขึ้น"
     return "➡️ คงที่"
 
+# ==========================
+# COLOR
+# ==========================
 def get_gradient(aqi):
-    if aqi <= 50: return "#00E676"
-    elif aqi <= 100: return "#FFD600"
-    elif aqi <= 150: return "#FF9100"
-    elif aqi <= 200: return "#FF3D00"
-    else: return "#AA00FF"
+    if aqi <= 50:
+        return "#00E676"
+    elif aqi <= 100:
+        return "#FFD600"
+    elif aqi <= 150:
+        return "#FF9100"
+    elif aqi <= 200:
+        return "#FF3D00"
+    else:
+        return "#AA00FF"
 
 # ==========================
-# TIER
+# FLEX LIST
 # ==========================
-def get_tier(aqi):
-    if aqi <= 50: return 1
-    elif aqi <= 100: return 2
-    elif aqi <= 150: return 3
-    elif aqi <= 200: return 4
-    else: return 5
+def build_list_flex(user_id):
+    bubbles = []
 
-# ==========================
-# 🔥 FLEX STYLE (ใหม่)
-# ==========================
-def build_flex_content(aqi_real, level, trend, advice, pm25):
-    return {
-        "type": "box",
-        "layout": "vertical",
-        "margin": "lg",
-        "spacing": "xl",
-        "contents": [
+    if user_id in users:
+        for i, loc in enumerate(users[user_id]):
+            bubbles.append({
+                "type": "bubble",
+                "body": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": [
+                        {"type": "text", "text": loc["name"], "weight": "bold", "size": "xl"}
+                    ]
+                },
+                "footer": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": [
+                        {
+                            "type": "button",
+                            "style": "primary",
+                            "color": "#F75454",
+                            "action": {
+                                "type": "postback",
+                                "label": "🗑️ ลบ",
+                                "data": f"action=delete&id={i}"
+                            }
+                        }
+                    ]
+                }
+            })
 
-            {
-                "type": "box",
-                "layout": "baseline",
-                "contents": [
-                    {"type": "text", "text": "AQI", "flex": 2, "weight": "bold", "size": "sm"},
-                    {"type": "text", "text": str(aqi_real), "flex": 5, "size": "sm"}
-                ]
-            },
-
-            {
-                "type": "box",
-                "layout": "baseline",
-                "contents": [
-                    {"type": "text", "text": "ระดับ", "flex": 2, "weight": "bold", "size": "sm"},
-                    {"type": "text", "text": level, "flex": 5, "size": "sm"}
-                ]
-            },
-
-            {
-                "type": "box",
-                "layout": "baseline",
-                "contents": [
-                    {"type": "text", "text": "สถานะ", "flex": 2, "weight": "bold", "size": "sm"},
-                    {"type": "text", "text": trend, "flex": 5, "size": "sm"}
-                ]
-            },
-
-            {
-                "type": "box",
-                "layout": "baseline",
-                "contents": [
-                    {"type": "text", "text": "คำแนะนำ", "flex": 2, "weight": "bold", "size": "sm"},
-                    {"type": "text", "text": advice, "flex": 5, "size": "sm", "wrap": True}
-                ]
-            },
-
-            {
-                "type": "box",
-                "layout": "baseline",
-                "contents": [
-                    {"type": "text", "text": "PM2.5", "flex": 2, "weight": "bold", "size": "sm"},
-                    {"type": "text", "text": f"{pm25:.2f}", "flex": 5, "size": "sm"}
-                ]
-            }
-        ]
-    }
-
-# ==========================
-# FLEX AQI (แก้)
-# ==========================
-def build_aqi_flex(loc, pm25, aqi_real, trend, level, advice):
-    return {
+    bubbles.append({
         "type": "bubble",
         "body": {
             "type": "box",
             "layout": "vertical",
             "contents": [
-                {"type": "text", "text": loc["name"], "weight": "bold", "size": "xl"},
-                build_flex_content(aqi_real, level, trend, advice, pm25)
+                {"type": "text", "text": "➕ เพิ่มสถานที่", "weight": "bold", "size": "xl"}
+            ]
+        },
+        "footer": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {
+                    "type": "button",
+                    "style": "primary",
+                    "action": {"type": "postback", "label": "เพิ่ม", "data": "action=add"}
+                }
+            ]
+        }
+    })
+
+    return FlexSendMessage(
+        alt_text="รายการ",
+        contents={"type": "carousel", "contents": bubbles}
+    )
+
+# ==========================
+# FLEX AQI
+# ==========================
+def build_aqi_flex(loc, pm25, aqi_real, trend, level, advice):
+    color = get_gradient(aqi_real)
+
+    return {
+        "type": "bubble",
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "background": {
+                "type": "linearGradient",
+                "angle": "180deg",
+                "startColor": color,
+                "endColor": "#ffffff"
+            },
+            "contents": [
+                {
+                    "type": "text",
+                    "text": loc["name"],
+                    "weight": "bold",
+                    "size": "xxl"
+                },
+                {
+                    "type": "box",
+                    "layout": "vertical",
+                    "margin": "lg",
+                    "spacing": "xl",
+                    "contents": [
+
+                        # AQI
+                        {
+                            "type": "box",
+                            "layout": "baseline",
+                            "spacing": "sm",
+                            "contents": [
+                                {
+                                    "type": "text",
+                                    "text": "AQI",
+                                    "color": "#444444",
+                                    "size": "sm",
+                                    "flex": 2,
+                                    "weight": "bold"
+                                },
+                                {
+                                    "type": "text",
+                                    "text": str(aqi_real),
+                                    "wrap": True,
+                                    "color": "#444444",
+                                    "size": "sm",
+                                    "flex": 5
+                                }
+                            ]
+                        },
+
+                        # ระดับ
+                        {
+                            "type": "box",
+                            "layout": "baseline",
+                            "spacing": "sm",
+                            "contents": [
+                                {
+                                    "type": "text",
+                                    "text": "ระดับ",
+                                    "color": "#444444",
+                                    "size": "sm",
+                                    "flex": 2,
+                                    "weight": "bold"
+                                },
+                                {
+                                    "type": "text",
+                                    "text": level,
+                                    "wrap": True,
+                                    "color": "#444444",
+                                    "size": "sm",
+                                    "flex": 5
+                                }
+                            ]
+                        },
+
+                        # สถานะ
+                        {
+                            "type": "box",
+                            "layout": "baseline",
+                            "spacing": "sm",
+                            "contents": [
+                                {
+                                    "type": "text",
+                                    "text": "สถานะ",
+                                    "color": "#444444",
+                                    "size": "sm",
+                                    "flex": 2,
+                                    "weight": "bold"
+                                },
+                                {
+                                    "type": "text",
+                                    "text": trend,
+                                    "wrap": True,
+                                    "color": "#444444",
+                                    "size": "sm",
+                                    "flex": 5
+                                }
+                            ]
+                        },
+
+                        # คำแนะนำ
+                        {
+                            "type": "box",
+                            "layout": "baseline",
+                            "spacing": "sm",
+                            "contents": [
+                                {
+                                    "type": "text",
+                                    "text": "คำแนะนำ",
+                                    "color": "#444444",
+                                    "size": "sm",
+                                    "flex": 2,
+                                    "weight": "bold"
+                                },
+                                {
+                                    "type": "text",
+                                    "text": advice,
+                                    "wrap": True,
+                                    "color": "#444444",
+                                    "size": "sm",
+                                    "flex": 5
+                                }
+                            ]
+                        },
+
+                        # PM2.5 (เพิ่มเข้าไปให้ครบ)
+                        {
+                            "type": "box",
+                            "layout": "baseline",
+                            "spacing": "sm",
+                            "contents": [
+                                {
+                                    "type": "text",
+                                    "text": "PM2.5",
+                                    "color": "#444444",
+                                    "size": "sm",
+                                    "flex": 2,
+                                    "weight": "bold"
+                                },
+                                {
+                                    "type": "text",
+                                    "text": f"{pm25:.2f}",
+                                    "wrap": True,
+                                    "color": "#444444",
+                                    "size": "sm",
+                                    "flex": 5
+                                }
+                            ]
+                        }
+
+                    ]
+                }
             ]
         }
     }
-
 # ==========================
-# WARN (แก้ให้ใช้ style เดียวกัน)
-# ==========================
-def check_air_quality_job():
-    for user_id, locs in users.items():
-        for loc in locs:
-
-            pm25, _ = get_air_quality(loc["lat"], loc["lon"])
-            if pm25 is None:
-                continue
-
-            new_aqi = pm25_to_aqi(pm25)
-            old_aqi = loc["last_aqi"]
-
-            if get_tier(new_aqi) > get_tier(old_aqi):
-
-                level, advice = interpret_aqi(new_aqi)
-
-                bubble = {
-                    "type": "bubble",
-                    "body": {
-                        "type": "box",
-                        "layout": "vertical",
-                        "contents": [
-                            {"type": "text", "text": f"⚠️ {loc['name']}", "weight": "bold", "size": "xl"},
-                            build_flex_content(new_aqi, level, "📈 แย่ลง", advice, pm25)
-                        ]
-                    }
-                }
-
-                line_bot_api.push_message(user_id, FlexSendMessage(alt_text="Alert", contents=bubble))
-
-            loc["last_aqi"] = new_aqi
-
-# ==========================
-# TEXT HANDLER
+# TEXT
 # ==========================
 @handler.add(MessageEvent, message=TextMessage)
 def handle_text(event):
@@ -212,7 +324,7 @@ def handle_text(event):
 
     elif text == "บอกฝุ่น":
         if user_id not in users or len(users[user_id]) == 0:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage("❌ ไม่มีสถานที่"))
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ ไม่มีสถานที่"))
             return
 
         bubbles = []
@@ -229,6 +341,10 @@ def handle_text(event):
             bubbles.append(build_aqi_flex(loc, pm25, aqi_real, trend, level, advice))
             loc["last_aqi"] = aqi_real
 
+        if len(bubbles) == 0:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ ดึงข้อมูลไม่ได้"))
+            return
+
         line_bot_api.reply_message(
             event.reply_token,
             FlexSendMessage(alt_text="AQI", contents={"type": "carousel", "contents": bubbles})
@@ -237,10 +353,11 @@ def handle_text(event):
     elif pending_action.get(user_id) == "waiting_name":
         pending_name[user_id] = text
         pending_action[user_id] = "waiting_location"
-        line_bot_api.reply_message(event.reply_token, TextSendMessage("📍 ส่ง location"))
+
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"📍 ส่ง location สำหรับ '{text}'"))
 
 # ==========================
-# LOCATION HANDLER
+# LOCATION
 # ==========================
 @handler.add(MessageEvent, message=LocationMessage)
 def handle_location(event):
@@ -284,7 +401,7 @@ def handle_postback(event):
 
     if data == "action=add":
         pending_action[user_id] = "waiting_name"
-        reply = "📌 ตั้งชื่อสถานที่"
+        reply = "📌 ตั้งชื่อสถานที่นี้ว่าอะไรดี?"
 
     elif "action=delete" in data:
         idx = int(data.split("id=")[1])
@@ -294,15 +411,15 @@ def handle_postback(event):
     line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
 
 # ==========================
-# ROUTES
+# WEB ROUTES
 # ==========================
-@app.route("/", methods=["GET"])
+@app.route("/", methods=["GET", "HEAD"])
 def home():
-    return "OK"
+    return "OK", 200
 
-@app.route("/callback", methods=["POST"])
+@app.route("/callback", methods=['POST'])
 def callback():
-    signature = request.headers.get("X-Line-Signature")
+    signature = request.headers.get('X-Line-Signature')
     body = request.get_data(as_text=True)
 
     try:
@@ -310,14 +427,7 @@ def callback():
     except InvalidSignatureError:
         abort(400)
 
-    return "OK"
-
-# ==========================
-# SCHEDULER START
-# ==========================
-scheduler = BackgroundScheduler()
-scheduler.add_job(check_air_quality_job, "interval", hours=1)
-scheduler.start()
+    return 'OK'
 
 # ==========================
 # RUN
