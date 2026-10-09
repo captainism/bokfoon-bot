@@ -63,16 +63,16 @@ def pm25_to_aqi(pm25):
         return int((500-301)/(500-250.4)*(pm25-250.4)+301)
 
 def interpret_aqi(aqi):
-    if aqi <= 50: return "ดี 😊", "อากาศดีมาก"
-    elif aqi <= 100: return "ปานกลาง 😐", "ยังโอเค"
-    elif aqi <= 150: return "เริ่มมีผล 😷", "ควรใส่หน้ากาก"
-    elif aqi <= 200: return "แย่ ⚠️", "หลีกเลี่ยงกิจกรรมกลางแจ้ง"
-    else: return "อันตราย ☠️", "ควรอยู่ในอาคาร"
+    if aqi <= 50: return "ดี ", "อากาศดีมาก"
+    elif aqi <= 100: return "ปานกลาง ", "ยังโอเค"
+    elif aqi <= 150: return "เริ่มมีผล ", "ควรใส่หน้ากาก"
+    elif aqi <= 200: return "แย่ ", "หลีกเลี่ยงกิจกรรมกลางแจ้ง"
+    else: return "อันตราย ", "ควรอยู่ในอาคาร"
 
 def get_trend(old, new):
-    if new > old: return "📈 แย่ลง"
-    elif new < old: return "📉 ดีขึ้น"
-    return "➡️ คงที่"
+    if new > old: return " แย่ลง"
+    elif new < old: return " ดีขึ้น"
+    return " คงที่"
 
 # ==========================
 # COLOR
@@ -126,7 +126,7 @@ def build_list_flex(user_id):
                             "color": "#F75454",
                             "action": {
                                 "type": "postback",
-                                "label": "🗑️ ลบ",
+                                "label": " ลบ",
                                 "data": f"action=delete&id={i}"
                             }
                         }
@@ -140,7 +140,7 @@ def build_list_flex(user_id):
             "type": "box",
             "layout": "vertical",
             "contents": [
-                {"type": "text", "text": "➕ เพิ่มสถานที่", "weight": "bold", "size": "xl"}
+                {"type": "text", "text": " เพิ่มสถานที่", "weight": "bold", "size": "xl"}
             ]
         },
         "footer": {
@@ -350,7 +350,7 @@ def check_air_quality_job():
                         "contents": [
                             {
                                 "type": "text",
-                                "text": "⚠️ อากาศแย่ลง",
+                                "text": " อากาศแย่ลง",
                                 "weight": "bold",
                                 "size": "xl",
                                 "color": "#FF3D00"
@@ -362,7 +362,7 @@ def check_air_quality_job():
                                 "size": "lg"
                             },
 
-                            # 👉 ใช้ style เดียวกับของคุณ
+                            #  ใช้ style เดียวกับของคุณ
                             {
                                 "type": "box",
                                 "layout": "vertical",
@@ -393,7 +393,7 @@ def check_air_quality_job():
                                         "layout": "baseline",
                                         "contents": [
                                             {"type": "text","text": "สถานะ","flex": 2,"weight": "bold","size": "sm"},
-                                            {"type": "text","text": "📈 แย่ลง","flex": 5,"size": "sm"}
+                                            {"type": "text","text": " แย่ลง","flex": 5,"size": "sm"}
                                         ]
                                     },
 
@@ -448,7 +448,7 @@ def handle_text(event):
 
     elif text == "บอกฝุ่น":
         if user_id not in users or len(users[user_id]) == 0:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ ไม่มีสถานที่"))
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=" ไม่มีสถานที่"))
             return
 
         bubbles = []
@@ -466,7 +466,7 @@ def handle_text(event):
             loc["last_aqi"] = aqi_real
 
         if len(bubbles) == 0:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ ดึงข้อมูลไม่ได้"))
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=" ดึงข้อมูลไม่ได้"))
             return
 
         line_bot_api.reply_message(
@@ -478,7 +478,7 @@ def handle_text(event):
         pending_name[user_id] = text
         pending_action[user_id] = "waiting_location"
 
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"📍 ส่ง location สำหรับ '{text}'"))
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f" ส่ง location สำหรับ '{text}'"))
 
 # ==========================
 # LOCATION
@@ -497,7 +497,7 @@ def handle_location(event):
     pm25, _ = get_air_quality(lat, lon)
 
     if pm25 is None:
-        reply = "❌ ดึงข้อมูลไม่สำเร็จ"
+        reply = " ดึงข้อมูลไม่สำเร็จ"
     else:
         aqi_real = pm25_to_aqi(pm25)
 
@@ -508,7 +508,7 @@ def handle_location(event):
             "last_aqi": aqi_real
         })
 
-        reply = f"✅ เพิ่ม {name} แล้ว"
+        reply = f" เพิ่ม {name} แล้ว"
 
     del pending_name[user_id]
     del pending_action[user_id]
@@ -525,12 +525,12 @@ def handle_postback(event):
 
     if data == "action=add":
         pending_action[user_id] = "waiting_name"
-        reply = "📌 ตั้งชื่อสถานที่นี้ว่าอะไรดี?"
+        reply = " ตั้งชื่อสถานที่นี้ว่าอะไรดี?"
 
     elif "action=delete" in data:
         idx = int(data.split("id=")[1])
         removed = users[user_id].pop(idx)
-        reply = f"🗑️ ลบ {removed['name']} แล้ว"
+        reply = f" ลบ {removed['name']} แล้ว"
 
     line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
 
