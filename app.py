@@ -70,9 +70,9 @@ def interpret_aqi(aqi):
     else: return "อันตราย ", "ควรอยู่ในอาคาร"
 
 def get_trend(old, new):
-    if new > old: return " แย่ลง"
-    elif new < old: return " ดีขึ้น"
-    return " คงที่"
+    if new > old: return "แย่ลง"
+    elif new < old: return "ดีขึ้น"
+    return "คงที่"
 
 # ==========================
 # COLOR
@@ -126,7 +126,7 @@ def build_list_flex(user_id):
                             "color": "#F75454",
                             "action": {
                                 "type": "postback",
-                                "label": " ลบ",
+                                "label": "ลบ",
                                 "data": f"action=delete&id={i}"
                             }
                         }
@@ -140,7 +140,7 @@ def build_list_flex(user_id):
             "type": "box",
             "layout": "vertical",
             "contents": [
-                {"type": "text", "text": " เพิ่มสถานที่", "weight": "bold", "size": "xl"}
+                {"type": "text", "text": "เพิ่มสถานที่", "weight": "bold", "size": "xl"}
             ]
         },
         "footer": {
@@ -350,7 +350,7 @@ def check_air_quality_job():
                         "contents": [
                             {
                                 "type": "text",
-                                "text": " อากาศแย่ลง",
+                                "text": "อากาศแย่ลง",
                                 "weight": "bold",
                                 "size": "xl",
                                 "color": "#FF3D00"
@@ -525,7 +525,7 @@ def handle_postback(event):
 
     if data == "action=add":
         pending_action[user_id] = "waiting_name"
-        reply = " ตั้งชื่อสถานที่นี้ว่าอะไรดี?"
+        reply = "ตั้งชื่อสถานที่นี้ว่าอะไรดี?"
 
     elif "action=delete" in data:
         idx = int(data.split("id=")[1])
